@@ -1,54 +1,76 @@
-[//]: # (Image References)
-[image_0]: ./misc/rover_image.jpg
-[![Udacity - Robotics NanoDegree Program](https://s3-us-west-1.amazonaws.com/udacity-robotics/Extra+Images/RoboND_flag.png)](https://www.udacity.com/robotics)
 # Search and Sample Return Project
+## [Rubric](https://review.udacity.com/#!/rubrics/916/view)
+---
+### Notebook Analysis
+#### 1. Obstacle + Rock Sample Identification
+I modified the color_threshold function to check if the pixel is either above or below the specified threshold.
+For Rock and Obstacle detection, I first transform the image to the HSV color space.
 
+| Object   | HSV                   | Mode    | 
+|:--------:|:---------------------:|:-------:| 
+| Rock     | (H= 25, S=120, V=120) | Above   |              
+| Obstacle | (H=255, S=255, V=120) | Below   |
 
-![alt text][image_0] 
+My intuition for the obstacle detector is that all the obstacles are dark colors of a variety of color shades. Therefore, the Hue and Saturation settings are not important. The Lightness setting is set to a low value to find only dark colors.
 
-This project is modeled after the [NASA sample return challenge](https://www.nasa.gov/directorates/spacetech/centennial_challenges/sample_return_robot/index.html) and it will give you first hand experience with the three essential elements of robotics, which are perception, decision making and actuation.  You will carry out this project in a simulator environment built with the Unity game engine.  
+For the rock detector, I focused on the yellow color with the saturation and hue settings guarantee a robust detection across a wide range of lighting conditions. HSV is better than RGB because the detector can focus on a specific color. It is difficult to threshold the RGB color space for a wide range of yellow colors.
 
-## The Simulator
-The first step is to download the simulator build that's appropriate for your operating system.  Here are the links for [Linux](https://s3-us-west-1.amazonaws.com/udacity-robotics/Rover+Unity+Sims/Linux_Roversim.zip), [Mac](	https://s3-us-west-1.amazonaws.com/udacity-robotics/Rover+Unity+Sims/Mac_Roversim.zip), or [Windows](https://s3-us-west-1.amazonaws.com/udacity-robotics/Rover+Unity+Sims/Windows_Roversim.zip).  
+#### Rock Detection
+![rock_detection](./results/images/rock_detection.png)
 
-You can test out the simulator by opening it up and choosing "Training Mode".  Use the mouse or keyboard to navigate around the environment and see how it looks.
+#### Obstacle Detection
+![obstacle_detection](./results/images/obstacle_detection.png)
 
-## Dependencies
-You'll need Python 3 and Jupyter Notebooks installed to do this project.  The best way to get setup with these if you are not already is to use Anaconda following along with the [RoboND-Python-Starterkit](https://github.com/ryan-keenan/RoboND-Python-Starterkit). 
+#### Terrain Detection
+![terrain_detection](./results/images/terrain.png)
 
+#### 2. process_image
+I decided to perform the color threshold first before running the perspective transform. This change prevents spurious lines in the terrain detection, which negatively impacts the driving angle calculated from the mean of all terrain pixels. The spurious lines occur when misclassified pixels in the far background are stretched by the perspective transform into lines.
 
-Here is a great link for learning more about [Anaconda and Jupyter Notebooks](https://classroom.udacity.com/courses/ud1111)
+![rover_navigation](./results/images/rover_navigation.png)
+![jupyter_demo](./results/images/jupyter_demo.png)
 
-## Recording Data
-I've saved some test data for you in the folder called `test_dataset`.  In that folder you'll find a csv file with the output data for steering, throttle position etc. and the pathnames to the images recorded in each run.  I've also saved a few images in the folder called `calibration_images` to do some of the initial calibration steps with.  
+### Autonomous Navigation and Mapping
+#### 1. perception_step function
+This function detects the terrain, obstacles, and rocks in the image retrieved by the sensors. It updates the world map and the robot's view of the world.
 
-The first step of this project is to record data on your own.  To do this, you should first create a new folder to store the image data in.  Then launch the simulator and choose "Training Mode" then hit "r".  Navigate to the directory you want to store data in, select it, and then drive around collecting data.  Hit "r" again to stop data collection.
+#### Changes from Jupyter Notebook
+ * BGR terrain detector (B=0, G=0, R=160). It is difficult to tell by looking at the world map, but this detector yields better fidelity in my simulation than the HSV detector in the jupyter notebook.  
 
-## Data Analysis
-Included in the IPython notebook called `Rover_Project_Test_Notebook.ipynb` are the functions from the lesson for performing the various steps of this project.  The notebook should function as is without need for modification at this point.  To see what's in the notebook and execute the code there, start the jupyter notebook server at the command line like this:
+I only update the world map if the roll and pitch are below a threshold, which prevents low fidelity measurement update. (Ln 134-140 - perception.py)
+The perception function performs the perspective transform and then the color threshold. The default pipeline acquired a higher fidelity map in my experiments.
 
-```sh
-jupyter notebook
-```
+#### 2. decision_step function
+This function interprets the information from the perception_step and selects the robot's next action.
+The robot's behavior is represented by a finite state machine. Depending on the conditions, the robot transitions between a fixed set of sub-behaviors.
 
-This command will bring up a browser window in the current directory where you can navigate to wherever `Rover_Project_Test_Notebook.ipynb` is and select it.  Run the cells in the notebook from top to bottom to see the various data analysis steps.  
+ * Reverse Mode - If the rover is stuck, reverse the rover to recover. (Ln 21-24, 46-55, 89-98 - decision.py)
+ I track the cummulative distance change in the robot's position.
+ If the robot's movement is below a threshold, I reverse the robot directly backwards for a fixed number of rounds.
+ Afterwards, normal control is resumed.
 
-The last two cells in the notebook are for running the analysis on a folder of test images to create a map of the simulator environment and write the output to a video.  These cells should run as-is and save a video called `test_mapping.mp4` to the `output` folder.  This should give you an idea of how to go about modifying the `process_image()` function to perform mapping on your data.  
+#### 3. Rover - Autonomous Mode 
+My robot scanned 73.2% of the environment with 77.0% fidelity in 257.4 seconds.
+Final - (96.8% mapped with 62.2% fidelity in 1388.1 seconds) - Old Simulator
 
-## Navigating Autonomously
-The file called `drive_rover.py` is what you will use to navigate the environment in autonomous mode.  This script calls functions from within `perception.py` and `decision.py`.  The functions defined in the IPython notebook are all included in`perception.py` and it's your job to fill in the function called `perception_step()` with the appropriate processing steps and update the rover map. `decision.py` includes another function called `decision_step()`, which includes an example of a conditional statement you could use to navigate autonomously.  Here you should implement other conditionals to make driving decisions based on the rover's state and the results of the `perception_step()` analysis.
+![autonomous_demo](./results/images/autonomous_demo.png)
+![final_autonomous_demo](./results/images/autonomous_demo_final.png)
 
-`drive_rover.py` should work as is if you have all the required Python packages installed. Call it at the command line like this: 
+#### Simulator Settings
+* Resolution: 1024 x 784
+* Quality: Fantastic
+* FPS: 39-42
 
-```sh
-python drive_rover.py
-```  
+#### Future Enhancements
+* Reverse Mode Robustness
+My reverse mode gets confused between being stuck with an obstacle and rotating in place. In both scenarios, the robot's position is not changing. 
+A better approach is to track the number of terrain pixels. If the number is changing, then the robot is moving and not stuck.
 
-Then launch the simulator and choose "Autonomous Mode".  The rover should drive itself now!  It doesn't drive that well yet, but it's your job to make it better!  
+* Steering Angle Selection
+My robot uses the mean of the valid terrain points to calculate its next steering angle.
+There are scenarios where an obstacle is in the robot's direct path. However, two valid paths appear on the left and right.
+The mean steering angle will choose to drive straight into the obstacle.
 
-**Note: running the simulator with different choices of resolution and graphics quality may produce different results!  Make a note of your simulator settings in your writeup when you submit the project.**
-
-### Project Walkthrough
-If you're struggling to get started on this project, or just want some help getting your code up to the minimum standards for a passing submission, we've recorded a walkthrough of the basic implementation for you but **spoiler alert: this [Project Walkthrough Video](https://www.youtube.com/watch?v=oJA6QHDPdQw) contains a basic solution to the project!**.
-
-
+* Obstacle Avoidance + Perception Pipeline
+In addition, the current pipeline cannot distiguish between a wall or rock obstacle. Often times, the robot will turn to avoid the rock obstacle but gets stuck.
+Sometimes, the reverse mode behavior cannot free the robot from the obstacle.

@@ -1,5 +1,8 @@
 import numpy as np
+import math
 
+def distance(x, y):
+    return math.sqrt((x[0] - y[0])**2.0 + (x[1] - y[1])**2.0)
 
 # This is where you can build a decision tree for determining throttle, brake and steer 
 # commands based on the output of the perception_step() function
@@ -9,13 +12,19 @@ def decision_step(Rover):
     # Here you're all set up with some basic functionality but you'll need to
     # improve on this decision tree to do a good job of navigating autonomously!
 
+    FPS = 100
     # Example:
     # Check if we have vision data to make decisions with
     if Rover.nav_angles is not None:
         # Check for Rover.mode status
         if Rover.mode == 'forward': 
+            # Check if the robot is in "reverse" mode
+            if Rover.reset > 0:
+                Rover.throttle = -1.0
+                Rover.reset -= 1
+                Rover.steer = 0
             # Check the extent of navigable terrain
-            if len(Rover.nav_angles) >= Rover.stop_forward:  
+            elif len(Rover.nav_angles) >= Rover.stop_forward:  
                 # If mode is forward, navigable terrain looks good 
                 # and velocity is below max, then throttle 
                 if Rover.vel < Rover.max_vel:
@@ -34,6 +43,17 @@ def decision_step(Rover):
                     Rover.brake = Rover.brake_set
                     Rover.steer = 0
                     Rover.mode = 'stop'
+
+            # Update cummulative distance
+            if Rover.prev_pos is not None:
+                Rover.cumm_move += distance(Rover.prev_pos, Rover.pos)
+
+            # For the current time interval
+            # If the robot is not moving and the throttle is engaged, then go to 'reverse' mode
+            if (Rover.count >= FPS and (Rover.cumm_move < 0.05) and Rover.throttle > 0):
+                    Rover.mode = 'forward'
+                    Rover.reset = 200
+                    Rover.steer = 0
 
         # If we're already in "stop" mode then make different decisions
         elif Rover.mode == 'stop':
@@ -71,5 +91,14 @@ def decision_step(Rover):
     if Rover.near_sample and Rover.vel == 0 and not Rover.picking_up:
         Rover.send_pickup = True
     
-    return Rover
+    # Update the "reverse" mode variables // Reset time interval
+    if Rover.count >= FPS:
+        Rover.count = 0
+        Rover.cumm_move = 0
 
+    if Rover.reset > 0:
+        Rover.reset -= 1
+
+    Rover.count += 1
+    Rover.prev_pos = Rover.pos
+    return Rover
